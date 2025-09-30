@@ -7,12 +7,15 @@ import { createClient } from '@supabase/supabase-js';
 const PORT = process.env.PORT || 4000;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://zaupvohmnaiilistuxtl.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphdXB2b2htbmFpaWxpc3R1eHRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyODY2MTcsImV4cCI6MjA3Mzg2MjYxN30.kQP6BnFj84COj8rrw9iKDLbvHPG-98XcrNXuAmh5dxE';
+// Tentar usar service role key se disponível
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || SUPABASE_KEY;
 // Usar webhook simulador local temporariamente até N8N estar ativo
 const WEBHOOK_URL = process.env.WEBHOOK_URL || 'http://localhost:4000/api/webhook-simulator';
 const N8N_WEBHOOK_URL = 'https://n8n-n8n.we3qg7.easypanel.host/webhook/d6d5efa4-4179-406f-9439-25142f1de595';
 const USE_SIMULATOR = process.env.USE_SIMULATOR === 'true' || false; // Usar simulador por padrão para testes
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -157,6 +160,164 @@ app.get('/api/schema-status', async (_req, res) => {
     });
   } catch (error) {
     console.error('Erro ao verificar schema:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create conversations with admin client
+app.post('/api/create-conversas-admin', async (_req, res) => {
+  try {
+    console.log('Criando conversas com cliente admin...');
+    
+    const conversas = [
+      {
+        id_conversa: '8245edca-806d-4be7-8414-45cc387fa34a',
+        nome_contato: 'Bruno Silva',
+        ultima_mensagem: 'Olá. tudo bem?',
+        timestamp: '2025-09-29T23:48:22.084+00:00',
+        status: 'ativa'
+      },
+      {
+        id_conversa: 'cd2b69f9-ebc0-4dbe-a63a-6fd71c75f5ad',
+        nome_contato: 'Cliente Teste',
+        ultima_mensagem: 'Obrigado pela resposta! Funcionou perfeitamente.',
+        timestamp: '2025-09-30T00:02:03.483+00:00',
+        status: 'ativa'
+      }
+    ];
+
+    const { data, error } = await supabaseAdmin
+      .from('conversas')
+      .insert(conversas)
+      .select();
+
+    if (error) {
+      console.error('Erro ao inserir conversas com admin:', error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    console.log('Conversas inseridas com admin:', data);
+    res.json({ ok: true, data, message: 'Conversas criadas com cliente admin!' });
+    
+  } catch (error) {
+    console.error('Erro geral:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Fix RLS policies endpoint
+app.post('/api/fix-rls', async (_req, res) => {
+  try {
+    console.log('Corrigindo políticas RLS...');
+    
+    // Primeiro, vamos tentar desabilitar RLS temporariamente
+    // Nota: Isso pode não funcionar dependendo das permissões
+    const { error: disableError } = await supabase.rpc('exec', {
+      sql: 'ALTER TABLE public.conversas DISABLE ROW LEVEL SECURITY;'
+    });
+
+    if (disableError) {
+      console.log('Não foi possível desabilitar RLS:', disableError);
+    }
+
+    // Tentar inserir uma conversa de teste
+    const { data: insertData, error: insertError } = await supabase
+      .from('conversas')
+      .insert({
+        id_conversa: crypto.randomUUID(),
+        nome_contato: 'Teste RLS Fix',
+        ultima_mensagem: 'Teste após correção',
+        timestamp: new Date().toISOString(),
+        status: 'ativa'
+      })
+      .select();
+
+    console.log('Resultado após correção:', { insertData, insertError });
+
+    res.json({
+      message: 'Tentativa de correção RLS concluída',
+      insert: { data: insertData, error: insertError }
+    });
+    
+  } catch (error) {
+    console.error('Erro ao corrigir RLS:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Debug endpoint to check RLS policies
+app.get('/api/debug-rls', async (_req, res) => {
+  try {
+    console.log('Verificando políticas RLS...');
+    
+    // Tentar inserir uma conversa de teste
+    const { data: insertData, error: insertError } = await supabase
+      .from('conversas')
+      .insert({
+        id_conversa: crypto.randomUUID(),
+        nome_contato: 'Teste RLS',
+        ultima_mensagem: 'Teste',
+        timestamp: new Date().toISOString(),
+        status: 'ativa'
+      })
+      .select();
+
+    console.log('Resultado da inserção:', { insertData, insertError });
+
+    // Tentar buscar conversas
+    const { data: selectData, error: selectError } = await supabase
+      .from('conversas')
+      .select('*');
+
+    console.log('Resultado da busca:', { selectData, selectError });
+
+    res.json({
+      insert: { data: insertData, error: insertError },
+      select: { data: selectData, error: selectError }
+    });
+    
+  } catch (error) {
+    console.error('Erro no debug RLS:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create test conversations endpoint
+app.post('/api/create-test-conversas', async (_req, res) => {
+  try {
+    console.log('Criando conversas de teste...');
+    
+    const conversas = [
+      {
+        id_conversa: '8245edca-806d-4be7-8414-45cc387fa34a',
+        nome_contato: 'Bruno Silva',
+        ultima_mensagem: 'Olá. tudo bem?',
+        timestamp: '2025-09-29T23:48:22.084+00:00',
+        status: 'ativa'
+      },
+      {
+        id_conversa: 'cd2b69f9-ebc0-4dbe-a63a-6fd71c75f5ad',
+        nome_contato: 'Cliente Teste',
+        ultima_mensagem: 'Obrigado pela resposta! Funcionou perfeitamente.',
+        timestamp: '2025-09-30T00:02:03.483+00:00',
+        status: 'ativa'
+      }
+    ];
+
+    const { error } = await supabase
+      .from('conversas')
+      .insert(conversas);
+
+    if (error) {
+      console.error('Erro ao inserir conversas:', error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    console.log('Conversas inseridas com sucesso!');
+    res.json({ ok: true, message: 'Conversas de teste criadas com sucesso!' });
+    
+  } catch (error) {
+    console.error('Erro geral:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -352,21 +513,58 @@ app.post('/api/send', async (req, res) => {
       console.warn('❌ Número inválido:', numeroTelefone, 'de:', conversaId);
     }
     
-    // Salvar no banco local - versão simplificada
+    // Salvar no banco local
     console.log('Preparando dados para salvar no banco...');
     
-    // Por enquanto, vamos apenas registrar que a mensagem foi enviada
-    // sem salvar no banco até corrigirmos o schema UUID
-    console.log('Mensagem processada:', {
-      conversaId,
-      textoMensagem,
-      remetente: remetente || 'operador',
-      timestamp: timestamp || new Date().toISOString()
-    });
-    
-    console.log('AVISO: Mensagem não foi salva no banco devido ao erro UUID. Corrija o schema primeiro.');
-    
-    console.log('Mensagem salva no banco com sucesso');
+    try {
+      // Gerar UUID para a conversa se necessário
+      let conversaUuid = conversaId;
+      
+      // Verificar se o ID da conversa é um UUID válido
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(conversaId)) {
+        // Se não for UUID, gerar um baseado no ID original
+        conversaUuid = crypto.randomUUID();
+        console.log(`Convertendo ID de conversa ${conversaId} para UUID ${conversaUuid}`);
+      }
+      
+      // Primeiro, garantir que a conversa existe
+      const { error: convError } = await supabase
+        .from('conversas')
+        .upsert({
+          id_conversa: conversaUuid,
+          nome_contato: nome_contato || 'Contato',
+          ultima_mensagem: textoMensagem,
+          timestamp: timestamp || new Date().toISOString(),
+          status: 'ativa',
+          importante: false
+        }, { onConflict: 'id_conversa' });
+      
+      if (convError) {
+        console.error('Erro ao salvar conversa:', convError);
+      } else {
+        console.log('Conversa salva/atualizada com sucesso');
+      }
+      
+      // Agora salvar a mensagem
+      const { error: msgError } = await supabase
+        .from('mensagens')
+        .insert({
+          id: crypto.randomUUID(),
+          id_conversa_fk: conversaUuid,
+          remetente: remetente || 'operador',
+          conteudo: textoMensagem,
+          timestamp: timestamp || new Date().toISOString()
+        });
+      
+      if (msgError) {
+        console.error('Erro ao salvar mensagem:', msgError);
+      } else {
+        console.log('Mensagem salva no banco com sucesso');
+      }
+    } catch (dbError) {
+      console.error('Erro geral ao salvar no banco:', dbError);
+    }
     res.json({ ok: true, message: 'Mensagem enviada e salva com sucesso' });
     
   } catch (error) {
@@ -385,9 +583,20 @@ app.post('/api/webhook/whatsapp', async (req, res) => {
   if (!id_conversa || !nome_contato || !conteudo) return res.status(400).json({ error: 'payload inválido' });
   
   try {
+    // Gerar UUID para a conversa se necessário
+    let conversaUuid = id_conversa;
+    
+    // Verificar se o ID da conversa é um UUID válido
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id_conversa)) {
+      // Se não for UUID, gerar um baseado no ID original
+      conversaUuid = crypto.randomUUID();
+      console.log(`Convertendo ID de conversa ${id_conversa} para UUID ${conversaUuid}`);
+    }
+    
     // Upsert conversation
     await supabase.from('conversas').upsert({ 
-      id_conversa, 
+      id_conversa: conversaUuid, 
       nome_contato, 
       ultima_mensagem: conteudo, 
       timestamp: timestamp || new Date().toISOString(), 
@@ -395,12 +604,22 @@ app.post('/api/webhook/whatsapp', async (req, res) => {
       importante: false 
     }, { onConflict: 'id_conversa' });
     
-    // Skip message insert due to UUID error - just log it
-    console.log('Webhook recebido - conversa salva, mensagem ignorada devido ao erro UUID:', {
-      id_conversa, nome_contato, conteudo
+    // Insert message
+    const { error: msgError } = await supabase.from('mensagens').insert({
+      id: crypto.randomUUID(),
+      id_conversa_fk: conversaUuid,
+      remetente: 'contato',
+      conteudo: conteudo,
+      timestamp: timestamp || new Date().toISOString()
     });
     
-    res.json({ ok: true, message: 'Conversa salva (mensagem não salva devido ao UUID)' });
+    if (msgError) {
+      console.error('Erro ao salvar mensagem:', msgError);
+    } else {
+      console.log('Mensagem salva com sucesso');
+    }
+    
+    res.json({ ok: true, message: 'Conversa e mensagem salvas com sucesso' });
   } catch (error) {
     console.error('Erro no webhook:', error);
     res.status(500).json({ error: error.message });

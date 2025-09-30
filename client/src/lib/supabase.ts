@@ -16,10 +16,16 @@ export type Conversa = {
 
 export type Mensagem = {
   id: string;
-  id_conversa_fk: string;
-  remetente: 'contato' | 'operador' | 'sistema';
+  id_conversa_fk: string | null;
+  id_conversa: string | null;
+  remetente: 'contato' | 'operador' | 'sistema' | string;
   conteudo: string;
   timestamp: string;
+  numero?: string | null;
+  direcao?: string;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 
