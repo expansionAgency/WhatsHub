@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import fetch from 'node-fetch';
 import { createClient } from '@supabase/supabase-js';
+import { randomUUID } from 'crypto';
 
 const PORT = process.env.PORT || 4000;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://zaupvohmnaiilistuxtl.supabase.co';
@@ -224,7 +225,7 @@ app.post('/api/fix-rls', async (_req, res) => {
     const { data: insertData, error: insertError } = await supabase
       .from('conversas')
       .insert({
-        id_conversa: crypto.randomUUID(),
+        id_conversa: randomUUID(),
         nome_contato: 'Teste RLS Fix',
         ultima_mensagem: 'Teste após correção',
         timestamp: new Date().toISOString(),
@@ -254,7 +255,7 @@ app.get('/api/debug-rls', async (_req, res) => {
     const { data: insertData, error: insertError } = await supabase
       .from('conversas')
       .insert({
-        id_conversa: crypto.randomUUID(),
+        id_conversa: randomUUID(),
         nome_contato: 'Teste RLS',
         ultima_mensagem: 'Teste',
         timestamp: new Date().toISOString(),
@@ -373,6 +374,81 @@ app.post('/api/test-data', async (_req, res) => {
     res.json({ ok: true, message: 'Dados de teste inseridos com sucesso!' });
   } catch (error) {
     console.error('Erro ao inserir dados de teste:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Test endpoint para inserir mensagem diretamente
+app.post('/api/test-message', async (req, res) => {
+  try {
+    const { conteudo } = req.body;
+    
+    console.log('🧪 Teste - inserindo mensagem:', conteudo);
+    
+    const mensagemData = {
+      id: randomUUID(),
+      id_conversa_fk: randomUUID(),
+      remetente: 'operador',
+      conteudo: conteudo || 'Mensagem de teste',
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log('💾 Dados da mensagem:', mensagemData);
+    
+    const { data, error } = await supabase
+      .from('mensagens')
+      .insert(mensagemData)
+      .select();
+    
+    if (error) {
+      console.error('❌ Erro ao inserir mensagem:', error);
+      return res.status(500).json({ error: error.message });
+    }
+    
+    console.log('✅ Mensagem inserida:', data);
+    
+    res.json({ 
+      ok: true, 
+      data: data[0],
+      message: 'Mensagem inserida com sucesso!' 
+    });
+    
+  } catch (error) {
+    console.error('❌ Erro no teste:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Debug endpoint para verificar mensagens recentes
+app.get('/api/debug-mensagens', async (_req, res) => {
+  try {
+    console.log('🔍 Debug: Verificando mensagens recentes...');
+    
+    // Buscar mensagens dos últimos 10 minutos
+    const dezMinutosAtras = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    
+    const { data: mensagens, error } = await supabase
+      .from('mensagens')
+      .select('*')
+      .gte('timestamp', dezMinutosAtras)
+      .order('timestamp', { ascending: false });
+    
+    if (error) {
+      console.error('❌ Erro ao buscar mensagens:', error);
+      return res.status(500).json({ error: error.message });
+    }
+    
+    console.log(`📨 Encontradas ${mensagens.length} mensagens recentes`);
+    
+    res.json({
+      ok: true,
+      mensagens: mensagens || [],
+      total: mensagens?.length || 0,
+      periodo: 'últimos 10 minutos'
+    });
+    
+  } catch (error) {
+    console.error('❌ Erro no debug:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -524,7 +600,7 @@ app.post('/api/send', async (req, res) => {
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(conversaId)) {
         // Se não for UUID, gerar um baseado no ID original
-        conversaUuid = crypto.randomUUID();
+        conversaUuid = randomUUID();
         console.log(`Convertendo ID de conversa ${conversaId} para UUID ${conversaUuid}`);
       }
       
@@ -547,20 +623,25 @@ app.post('/api/send', async (req, res) => {
       }
       
       // Agora salvar a mensagem
+      const mensagemData = {
+        id: randomUUID(),
+        id_conversa_fk: conversaUuid,
+        remetente: remetente || 'operador',
+        conteudo: textoMensagem,
+        timestamp: timestamp || new Date().toISOString()
+      };
+      
+      console.log('💾 Salvando mensagem:', mensagemData);
+      
       const { error: msgError } = await supabase
         .from('mensagens')
-        .insert({
-          id: crypto.randomUUID(),
-          id_conversa_fk: conversaUuid,
-          remetente: remetente || 'operador',
-          conteudo: textoMensagem,
-          timestamp: timestamp || new Date().toISOString()
-        });
+        .insert(mensagemData);
       
       if (msgError) {
-        console.error('Erro ao salvar mensagem:', msgError);
+        console.error('❌ Erro ao salvar mensagem:', msgError);
+        console.error('❌ Dados que causaram erro:', mensagemData);
       } else {
-        console.log('Mensagem salva no banco com sucesso');
+        console.log('✅ Mensagem salva no banco com sucesso');
       }
     } catch (dbError) {
       console.error('Erro geral ao salvar no banco:', dbError);
@@ -590,7 +671,7 @@ app.post('/api/webhook/whatsapp', async (req, res) => {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(id_conversa)) {
       // Se não for UUID, gerar um baseado no ID original
-      conversaUuid = crypto.randomUUID();
+      conversaUuid = randomUUID();
       console.log(`Convertendo ID de conversa ${id_conversa} para UUID ${conversaUuid}`);
     }
     
@@ -606,7 +687,7 @@ app.post('/api/webhook/whatsapp', async (req, res) => {
     
     // Insert message
     const { error: msgError } = await supabase.from('mensagens').insert({
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       id_conversa_fk: conversaUuid,
       remetente: 'contato',
       conteudo: conteudo,
